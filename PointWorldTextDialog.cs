@@ -8,7 +8,7 @@ namespace CS2KZMappingTools
 {
     public partial class PointWorldTextDialog : Form
     {
-        public event Action<string, string, int, int, bool, string?, string>? TextGenerated;
+        public event Action<string, string, int, int, bool, string?, string, float>? TextGenerated;
         
         private readonly ThemeManager _themeManager;
         
@@ -26,7 +26,11 @@ namespace CS2KZMappingTools
         private RadioButton _addonPathRadio = null!;
         private Label _statusLabel = null!;
         private TextBox _filenameInput = null!;
-        private Label _filenamePreviewLabel = null!;
+        private bool _filenameManuallyEdited = false;
+        private PictureBox _previewPictureBox = null!;
+        private TrackBar _scaleTrackBar = null!;
+        private Label _scaleValueLabel = null!;
+        private static readonly string TempPreviewPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Temp", ".CS2KZ-mapping-tools", "preview.png");
 
         public PointWorldTextDialog(ThemeManager themeManager)
         {
@@ -38,7 +42,7 @@ namespace CS2KZMappingTools
         private void InitializeComponent()
         {
             Text = "point_worldtext Generator";
-            Size = new Size(480, 400);
+            Size = new Size(480, 650);
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -49,7 +53,7 @@ namespace CS2KZMappingTools
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 4,
-                RowCount = 14,
+                RowCount = 17,
                 Padding = new Padding(15)
             };
 
@@ -134,7 +138,48 @@ namespace CS2KZMappingTools
             panel.Controls.Add(sizePanel, 0, 3);
             panel.SetColumnSpan(sizePanel, 4);
 
-            // Row 4: Generate .vmat checkbox
+            // Row 4: Text scale label
+            var scaleLabel = new Label
+            {
+                Text = "Text scale:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            panel.Controls.Add(scaleLabel, 0, 4);
+            panel.SetColumnSpan(scaleLabel, 4);
+
+            // Row 5: Text scale trackbar with value label
+            var scalePanel = new Panel
+            {
+                Height = 40,
+                Anchor = AnchorStyles.Left | AnchorStyles.Right
+            };
+            
+            _scaleTrackBar = new TrackBar
+            {
+                Minimum = 1,
+                Maximum = 100,
+                Value = 100,
+                TickFrequency = 10,
+                TickStyle = TickStyle.TopLeft,
+                Width = 300,
+                Location = new Point(0, 0)
+            };
+            _scaleTrackBar.ValueChanged += ScaleTrackBar_ValueChanged;
+            scalePanel.Controls.Add(_scaleTrackBar);
+            
+            _scaleValueLabel = new Label
+            {
+                Text = "100%",
+                AutoSize = true,
+                Location = new Point(310, 10)
+            };
+            scalePanel.Controls.Add(_scaleValueLabel);
+            
+            panel.Controls.Add(scalePanel, 0, 5);
+            panel.SetColumnSpan(scalePanel, 4);
+
+            // Row 6: Generate .vmat checkbox
             _generateVmatCheckbox = new CheckBox
             {
                 Text = "Generate .vmat file",
@@ -142,51 +187,20 @@ namespace CS2KZMappingTools
                 Checked = true,
                 Anchor = AnchorStyles.Left
             };
-            panel.Controls.Add(_generateVmatCheckbox, 0, 4);
+            panel.Controls.Add(_generateVmatCheckbox, 0, 6);
             panel.SetColumnSpan(_generateVmatCheckbox, 4);
 
-            // Row 5: Filename input
-            var filenameLabel = new Label
-            {
-                Text = "Filename (optional):",
-                AutoSize = true,
-                Anchor = AnchorStyles.Left | AnchorStyles.Top
-            };
-            panel.Controls.Add(filenameLabel, 0, 5);
-            panel.SetColumnSpan(filenameLabel, 4);
-
-            _filenameInput = new TextBox
-            {
-                Anchor = AnchorStyles.Left | AnchorStyles.Right,
-                PlaceholderText = "Leave empty for auto-generated name"
-            };
-            _filenameInput.TextChanged += FilenameInput_TextChanged;
-            panel.Controls.Add(_filenameInput, 0, 6);
-            panel.SetColumnSpan(_filenameInput, 4);
-
-            // Row 7: Filename preview
-            _filenamePreviewLabel = new Label
-            {
-                Text = "File will be named: (enter text above to see preview)",
-                AutoSize = true,
-                Anchor = AnchorStyles.Left,
-                ForeColor = Color.Gray,
-                Font = new Font(Font.FontFamily, Font.Size * 0.9f, FontStyle.Italic)
-            };
-            panel.Controls.Add(_filenamePreviewLabel, 0, 7);
-            panel.SetColumnSpan(_filenamePreviewLabel, 4);
-
-            // Row 8: Output path options
+            // Row 7: Output path options
             var pathLabel = new Label
             {
                 Text = "Output location:",
                 AutoSize = true,
                 Anchor = AnchorStyles.Left | AnchorStyles.Top
             };
-            panel.Controls.Add(pathLabel, 0, 8);
+            panel.Controls.Add(pathLabel, 0, 7);
             panel.SetColumnSpan(pathLabel, 4);
 
-            // Row 9: Path selection radio buttons in a panel
+            // Row 8: Path selection radio buttons in a panel
             var pathPanel = new Panel
             {
                 Height = 25,
@@ -210,10 +224,10 @@ namespace CS2KZMappingTools
             };
             pathPanel.Controls.Add(_customPathRadio);
             
-            panel.Controls.Add(pathPanel, 0, 9);
+            panel.Controls.Add(pathPanel, 0, 8);
             panel.SetColumnSpan(pathPanel, 4);
 
-            // Row 10: Addon combo box
+            // Row 9: Addon combo box
             _addonComboBox = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
@@ -221,17 +235,18 @@ namespace CS2KZMappingTools
                 Width = 200
             };
             LoadAvailableAddons();
-            panel.Controls.Add(_addonComboBox, 0, 10);
+            panel.Controls.Add(_addonComboBox, 0, 9);
             panel.SetColumnSpan(_addonComboBox, 4);
 
-            // Row 11: Custom path input (initially hidden)
+            // Row 10: Custom path input (initially hidden)
             _outputPathInput = new TextBox
             {
                 Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
-                Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "text_output.png"),
+                Text = Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
+                PlaceholderText = "Select output directory",
                 Visible = false
             };
-            panel.Controls.Add(_outputPathInput, 0, 11);
+            panel.Controls.Add(_outputPathInput, 0, 10);
             panel.SetColumnSpan(_outputPathInput, 3);
 
             _browseButton = new Button
@@ -242,9 +257,50 @@ namespace CS2KZMappingTools
                 Visible = false
             };
             _browseButton.Click += BrowseButton_Click;
-            panel.Controls.Add(_browseButton, 3, 11);
+            panel.Controls.Add(_browseButton, 3, 10);
 
-            // Row 12: Generate button
+            // Row 11: Filename input
+            var filenameLabel = new Label
+            {
+                Text = "Filename:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            panel.Controls.Add(filenameLabel, 0, 11);
+            panel.SetColumnSpan(filenameLabel, 4);
+
+            _filenameInput = new TextBox
+            {
+                Anchor = AnchorStyles.Left | AnchorStyles.Right,
+                PlaceholderText = "Auto-generates from text above (or enter custom name)"
+            };
+            _filenameInput.TextChanged += FilenameInput_TextChanged;
+            panel.Controls.Add(_filenameInput, 0, 12);
+            panel.SetColumnSpan(_filenameInput, 4);
+
+            // Row 13: Preview image
+            var previewLabel = new Label
+            {
+                Text = "Preview:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            panel.Controls.Add(previewLabel, 0, 13);
+            panel.SetColumnSpan(previewLabel, 4);
+
+            _previewPictureBox = new PictureBox
+            {
+                Width = 200,
+                Height = 180,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.Black
+            };
+            panel.Controls.Add(_previewPictureBox, 0, 14);
+            panel.SetColumnSpan(_previewPictureBox, 4);
+
+            // Row 15: Generate button
             _generateButton = new Button
             {
                 Text = "Generate point_worldtext",
@@ -252,18 +308,19 @@ namespace CS2KZMappingTools
                 Anchor = AnchorStyles.Left | AnchorStyles.Right
             };
             _generateButton.Click += GenerateButton_Click;
-            panel.Controls.Add(_generateButton, 0, 12);
+            panel.Controls.Add(_generateButton, 0, 15);
             panel.SetColumnSpan(_generateButton, 4);
 
-            // Row 13: Status label (right under generate button)
+            // Row 16: Status label (closer to generate button)
             _statusLabel = new Label
             {
                 Text = "",
                 AutoSize = true,
-                Anchor = AnchorStyles.Left,
-                ForeColor = Color.Green
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                ForeColor = Color.Green,
+                Margin = new Padding(0, 2, 0, 0)
             };
-            panel.Controls.Add(_statusLabel, 0, 13);
+            panel.Controls.Add(_statusLabel, 0, 16);
             panel.SetColumnSpan(_statusLabel, 4);
 
             // Event handlers for radio buttons
@@ -275,6 +332,12 @@ namespace CS2KZMappingTools
             
             // Update preview when main text changes
             _textInput.TextChanged += (s, e) => UpdateFilenamePreview();
+            
+            // Update preview when size changes
+            _size256Radio.CheckedChanged += (s, e) => { if (_size256Radio.Checked) UpdatePreviewImage(); };
+            _size512Radio.CheckedChanged += (s, e) => { if (_size512Radio.Checked) UpdatePreviewImage(); };
+            _size1024Radio.CheckedChanged += (s, e) => { if (_size1024Radio.Checked) UpdatePreviewImage(); };
+            _size2048Radio.CheckedChanged += (s, e) => { if (_size2048Radio.Checked) UpdatePreviewImage(); };
 
             Controls.Add(panel);
         }
@@ -385,6 +448,14 @@ namespace CS2KZMappingTools
                 comboBox.BackColor = theme.ButtonBackground; // Use existing theme property
                 comboBox.ForeColor = theme.Text;
             }
+            else if (control is PictureBox pictureBox)
+            {
+                pictureBox.BackColor = theme.WindowBackground;
+            }
+            else if (control is TrackBar trackBar)
+            {
+                trackBar.BackColor = theme.WindowBackground;
+            }
             
             // Apply theme recursively to child controls
             foreach (Control child in control.Controls)
@@ -401,16 +472,16 @@ namespace CS2KZMappingTools
 
         private void BrowseButton_Click(object? sender, EventArgs e)
         {
-            using var dialog = new SaveFileDialog
+            using var dialog = new FolderBrowserDialog
             {
-                Filter = "PNG Images|*.png",
-                DefaultExt = "png",
-                FileName = "text_output.png"
+                Description = "Select output folder for the generated image",
+                UseDescriptionForTitle = true,
+                InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
             };
 
             if (dialog.ShowDialog() == DialogResult.OK)
             {
-                _outputPathInput.Text = dialog.FileName;
+                _outputPathInput.Text = dialog.SelectedPath;
             }
         }
 
@@ -441,13 +512,16 @@ namespace CS2KZMappingTools
             }
             else
             {
-                outputPath = _outputPathInput.Text.Trim();
-                if (string.IsNullOrEmpty(outputPath))
+                var directoryPath = _outputPathInput.Text.Trim();
+                if (string.IsNullOrEmpty(directoryPath))
                 {
-                    MessageBox.Show("Please specify an output file path.", "No Output Path", 
+                    MessageBox.Show("Please specify an output directory.", "No Output Directory", 
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return;
                 }
+                
+                // Combine directory and filename (filename will be determined below)
+                outputPath = directoryPath; // We'll add filename later
             }
 
             var size = GetSelectedSize();
@@ -455,12 +529,20 @@ namespace CS2KZMappingTools
             var selectedAddon = _addonPathRadio.Checked ? _addonComboBox.SelectedItem?.ToString() : null;
             var customFilename = _filenameInput.Text.Trim();
             var finalFilename = !string.IsNullOrEmpty(customFilename) ? SanitizeFilename(customFilename) : SanitizeFilename(text);
+            
+            // For custom path, combine directory with filename
+            if (_customPathRadio.Checked)
+            {
+                outputPath = Path.Combine(outputPath!, $"{finalFilename}.png");
+            }
+            
+            var scaleFactor = _scaleTrackBar.Value / 100.0f;
 
-            // Fire the event with all parameters including filename
-            TextGenerated?.Invoke(text, outputPath ?? "", size, size, generateVmat, selectedAddon, finalFilename);
+            // Fire the event with all parameters including filename and scale
+            TextGenerated?.Invoke(text, outputPath ?? "", size, size, generateVmat, selectedAddon, finalFilename, scaleFactor);
 
             // Show success message instead of closing
-            _statusLabel.Text = $"{text} made successfully!";
+            _statusLabel.Text = $"{finalFilename} made successfully!";
         }
         
         private int GetSelectedSize()
@@ -474,29 +556,40 @@ namespace CS2KZMappingTools
         
         private void FilenameInput_TextChanged(object? sender, EventArgs e)
         {
-            UpdateFilenamePreview();
+            // Check if this change was caused by auto-update or manual edit
+            var currentText = _textInput.Text.Trim();
+            var expectedAutoFilename = !string.IsNullOrEmpty(currentText) ? SanitizeFilename(currentText) : "";
+            
+            // If the filename doesn't match what would be auto-generated, mark as manually edited
+            _filenameManuallyEdited = _filenameInput.Text != expectedAutoFilename;
+            
+            // If user cleared the field, reset to auto-generation mode
+            if (string.IsNullOrEmpty(_filenameInput.Text))
+            {
+                _filenameManuallyEdited = false;
+                UpdateFilenamePreview();
+            }
         }
         
         private void UpdateFilenamePreview()
         {
-            var inputText = _textInput.Text.Trim();
-            var customFilename = _filenameInput.Text.Trim();
-            
-            string filename;
-            if (!string.IsNullOrEmpty(customFilename))
+            // Only auto-update if filename hasn't been manually edited
+            if (!_filenameManuallyEdited)
             {
-                filename = SanitizeFilename(customFilename);
-            }
-            else if (!string.IsNullOrEmpty(inputText))
-            {
-                filename = SanitizeFilename(inputText);
-            }
-            else
-            {
-                filename = "pointworldtext";
+                var inputText = _textInput.Text.Trim();
+                if (!string.IsNullOrEmpty(inputText))
+                {
+                    var sanitizedFilename = SanitizeFilename(inputText);
+                    _filenameInput.Text = sanitizedFilename;
+                }
+                else
+                {
+                    _filenameInput.Text = "";
+                }
             }
             
-            _filenamePreviewLabel.Text = $"File will be named: {filename}.png";
+            // Update preview when filename or text changes
+            UpdatePreviewImage();
         }
         
         private string SanitizeFilename(string input)
@@ -509,6 +602,75 @@ namespace CS2KZMappingTools
             result = result.Trim('_');
             
             return string.IsNullOrEmpty(result) ? "pointworldtext" : result;
+        }
+        
+        private void UpdatePreviewImage()
+        {
+            try
+            {
+                var text = _textInput.Text.Trim();
+                if (string.IsNullOrEmpty(text))
+                {
+                    _previewPictureBox.Image?.Dispose();
+                    _previewPictureBox.Image = null;
+                    return;
+                }
+                
+                var size = GetSelectedSize();
+                var scale = _scaleTrackBar.Value / 100.0f;
+                
+                // Create temp directory if it doesn't exist
+                Directory.CreateDirectory(Path.GetDirectoryName(TempPreviewPath)!);
+                
+                // Delete old preview file if it exists
+                if (File.Exists(TempPreviewPath))
+                {
+                    File.Delete(TempPreviewPath);
+                }
+                
+                // Generate preview using PointWorldTextManager
+                var previewPath = GeneratePreview(text, size, scale);
+                
+                if (previewPath != null && File.Exists(previewPath))
+                {
+                    // Load image into PictureBox
+                    _previewPictureBox.Image?.Dispose();
+                    using (var fs = new FileStream(previewPath, FileMode.Open, FileAccess.Read))
+                    {
+                        _previewPictureBox.Image = new Bitmap(fs);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // If preview generation fails, just clear the preview
+                _previewPictureBox.Image?.Dispose();
+                _previewPictureBox.Image = null;
+            }
+        }
+        
+        private string? GeneratePreview(string text, int size, float scale = 1.0f)
+        {
+            try
+            {
+                // Create a temporary PointWorldTextManager instance for preview generation
+                var previewManager = new PointWorldTextManager();
+                
+                // Generate preview directly to temp path with scale factor
+                var result = previewManager.GenerateTextWithOptions(text, TempPreviewPath, size, size, false, null, "preview", scale);
+                
+                return result != null ? TempPreviewPath : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        
+        private void ScaleTrackBar_ValueChanged(object? sender, EventArgs e)
+        {
+            _scaleValueLabel.Text = $"{_scaleTrackBar.Value}%";
+            UpdatePreviewImage();
         }
         
         protected override void Dispose(bool disposing)

@@ -129,13 +129,13 @@ namespace CS2KZMappingTools
         }
 
         public async Task<string?> GenerateTextWithOptionsAsync(string text, string outputPath, 
-            int canvasWidth, int canvasHeight, bool generateVmat, string? addonName, string? customFilename = null)
+            int canvasWidth, int canvasHeight, bool generateVmat, string? addonName, string? customFilename = null, float scaleFactor = 1.0f)
         {
-            return await Task.Run(() => GenerateTextWithOptions(text, outputPath, canvasWidth, canvasHeight, generateVmat, addonName, customFilename));
+            return await Task.Run(() => GenerateTextWithOptions(text, outputPath, canvasWidth, canvasHeight, generateVmat, addonName, customFilename, scaleFactor));
         }
 
         public string? GenerateTextWithOptions(string text, string outputPath, 
-            int canvasWidth, int canvasHeight, bool generateVmat, string? addonName, string? customFilename = null)
+            int canvasWidth, int canvasHeight, bool generateVmat, string? addonName, string? customFilename = null, float scaleFactor = 1.0f)
         {
             try
             {
@@ -169,7 +169,7 @@ namespace CS2KZMappingTools
                 }
 
                 // Generate the main PNG image
-                var result = StitchText(text, actualOutputPath, 0.5, 1.0, canvasWidth, canvasHeight);
+                var result = StitchText(text, actualOutputPath, 0.5, scaleFactor, canvasWidth, canvasHeight);
                 if (result == null)
                 {
                     return null;

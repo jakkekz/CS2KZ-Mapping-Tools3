@@ -2381,13 +2381,13 @@ namespace CS2KZMappingTools
                 
                 // Show a simple input dialog for text
                 var inputDialog = new PointWorldTextDialog(_themeManager);
-                inputDialog.TextGenerated += async (text, outputPath, canvasWidth, canvasHeight, generateVmat, selectedAddon, filename) =>
+                inputDialog.TextGenerated += async (text, outputPath, canvasWidth, canvasHeight, generateVmat, selectedAddon, filename, scaleFactor) =>
                 {
                     try
                     {
-                        OnLogMessage($"Generating text image: '{text}'");
+                        OnLogMessage($"Generating text image: '{text}' with scale {scaleFactor:P0}");
                         var result = await _pointWorldTextManager.GenerateTextWithOptionsAsync(
-                            text, outputPath, canvasWidth, canvasHeight, generateVmat, selectedAddon, filename);
+                            text, outputPath, canvasWidth, canvasHeight, generateVmat, selectedAddon, filename, scaleFactor);
                         
                         if (result != null)
                         {
