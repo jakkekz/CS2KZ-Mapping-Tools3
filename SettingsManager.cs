@@ -128,7 +128,7 @@ namespace CS2KZMappingTools
 
     public class Settings
     {
-        public string Theme { get; set; } = "grey";
+        public string Theme { get; set; } = "dracula";
         public Point WindowPosition { get; set; } = new Point(-1, -1);
         public bool CompactMode { get; set; } = false;
         public int GridColumns { get; set; } = 3;
@@ -143,7 +143,7 @@ namespace CS2KZMappingTools
             ["mapping"] = true,
             ["source2viewer"] = true,
             ["cs2importer"] = true,
-            ["skyboxconverter"] = true,
+            ["skyboxconverter"] = false,
             ["vtf2png"] = false,
             ["loading_screen"] = true,
             ["point_worldtext"] = false,
@@ -161,6 +161,6 @@ namespace CS2KZMappingTools
         public bool AutoUpdateMetamod { get; set; } = true;
         public bool AutoUpdateCS2KZ { get; set; } = true;
         public float Scale { get; set; } = 1.0f;
-        public bool ShowConsole { get; set; } = true;
+        public bool ShowConsole { get; set; } = false;
     }
 }
