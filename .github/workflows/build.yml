@@ -1,0 +1,67 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    
+    - name: Restore dependencies
+      run: dotnet restore
+    
+    - name: Publish Single-File Executable
+      run: dotnet publish -c Release --no-restore
+    
+    - name: Get version info
+      id: version
+      run: |
+        $commitCount = git rev-list --count HEAD
+        $shortSha = git rev-parse --short HEAD
+        $version = "1.0.$commitCount"
+        $tag = "v$version"
+        echo "version=$version" >> $env:GITHUB_OUTPUT
+        echo "tag=$tag" >> $env:GITHUB_OUTPUT
+        echo "sha=$shortSha" >> $env:GITHUB_OUTPUT
+    
+    - name: Upload Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: CS2KZ-Mapping-Tools-Portable
+        path: bin/Release/net8.0-windows/win-x64/publish/CS2KZMappingTools.exe
+    
+    - name: Create Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: Release ${{ steps.version.outputs.tag }}
+        body: |
+          Automated release from commit ${{ steps.version.outputs.sha }}
+          
+          ## Changes
+          ${{ github.event.head_commit.message }}
+          
+          ## Download
+          Download the single-file executable below - no installation required!
+        files: bin/Release/net8.0-windows/win-x64/publish/CS2KZMappingTools.exe
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
