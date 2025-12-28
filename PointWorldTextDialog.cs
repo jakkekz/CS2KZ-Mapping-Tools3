@@ -179,7 +179,29 @@ namespace CS2KZMappingTools
             panel.Controls.Add(scalePanel, 0, 5);
             panel.SetColumnSpan(scalePanel, 4);
 
-            // Row 6: Generate .vmat checkbox
+            // Row 6: Preview image
+            var previewLabel = new Label
+            {
+                Text = "Preview:",
+                AutoSize = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top
+            };
+            panel.Controls.Add(previewLabel, 0, 6);
+            panel.SetColumnSpan(previewLabel, 4);
+
+            _previewPictureBox = new PictureBox
+            {
+                Width = 200,
+                Height = 180,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
+                SizeMode = PictureBoxSizeMode.Zoom,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Color.Black
+            };
+            panel.Controls.Add(_previewPictureBox, 0, 7);
+            panel.SetColumnSpan(_previewPictureBox, 4);
+
+            // Row 8: Generate .vmat checkbox
             _generateVmatCheckbox = new CheckBox
             {
                 Text = "Generate .vmat file",
@@ -187,20 +209,20 @@ namespace CS2KZMappingTools
                 Checked = true,
                 Anchor = AnchorStyles.Left
             };
-            panel.Controls.Add(_generateVmatCheckbox, 0, 6);
+            panel.Controls.Add(_generateVmatCheckbox, 0, 8);
             panel.SetColumnSpan(_generateVmatCheckbox, 4);
 
-            // Row 7: Output path options
+            // Row 9: Output path options
             var pathLabel = new Label
             {
                 Text = "Output location:",
                 AutoSize = true,
                 Anchor = AnchorStyles.Left | AnchorStyles.Top
             };
-            panel.Controls.Add(pathLabel, 0, 7);
+            panel.Controls.Add(pathLabel, 0, 9);
             panel.SetColumnSpan(pathLabel, 4);
 
-            // Row 8: Path selection radio buttons in a panel
+            // Row 10: Path selection radio buttons in a panel
             var pathPanel = new Panel
             {
                 Height = 25,
@@ -224,7 +246,7 @@ namespace CS2KZMappingTools
             };
             pathPanel.Controls.Add(_customPathRadio);
             
-            panel.Controls.Add(pathPanel, 0, 8);
+            panel.Controls.Add(pathPanel, 0, 10);
             panel.SetColumnSpan(pathPanel, 4);
 
             // Row 9: Addon combo box
@@ -235,10 +257,10 @@ namespace CS2KZMappingTools
                 Width = 200
             };
             LoadAvailableAddons();
-            panel.Controls.Add(_addonComboBox, 0, 9);
+            panel.Controls.Add(_addonComboBox, 0, 11);
             panel.SetColumnSpan(_addonComboBox, 4);
 
-            // Row 10: Custom path input (initially hidden)
+            // Row 11: Custom path input (initially hidden) - same row as addon dropdown
             _outputPathInput = new TextBox
             {
                 Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
@@ -246,7 +268,7 @@ namespace CS2KZMappingTools
                 PlaceholderText = "Select output directory",
                 Visible = false
             };
-            panel.Controls.Add(_outputPathInput, 0, 10);
+            panel.Controls.Add(_outputPathInput, 0, 11);
             panel.SetColumnSpan(_outputPathInput, 3);
 
             _browseButton = new Button
@@ -257,16 +279,16 @@ namespace CS2KZMappingTools
                 Visible = false
             };
             _browseButton.Click += BrowseButton_Click;
-            panel.Controls.Add(_browseButton, 3, 10);
+            panel.Controls.Add(_browseButton, 3, 11);
 
-            // Row 11: Filename input
+            // Row 12: Filename input
             var filenameLabel = new Label
             {
                 Text = "Filename:",
                 AutoSize = true,
                 Anchor = AnchorStyles.Left | AnchorStyles.Top
             };
-            panel.Controls.Add(filenameLabel, 0, 11);
+            panel.Controls.Add(filenameLabel, 0, 12);
             panel.SetColumnSpan(filenameLabel, 4);
 
             _filenameInput = new TextBox
@@ -275,32 +297,10 @@ namespace CS2KZMappingTools
                 PlaceholderText = "Auto-generates from text above (or enter custom name)"
             };
             _filenameInput.TextChanged += FilenameInput_TextChanged;
-            panel.Controls.Add(_filenameInput, 0, 12);
+            panel.Controls.Add(_filenameInput, 0, 13);
             panel.SetColumnSpan(_filenameInput, 4);
 
-            // Row 13: Preview image
-            var previewLabel = new Label
-            {
-                Text = "Preview:",
-                AutoSize = true,
-                Anchor = AnchorStyles.Left | AnchorStyles.Top
-            };
-            panel.Controls.Add(previewLabel, 0, 13);
-            panel.SetColumnSpan(previewLabel, 4);
-
-            _previewPictureBox = new PictureBox
-            {
-                Width = 200,
-                Height = 180,
-                Anchor = AnchorStyles.Left | AnchorStyles.Top,
-                SizeMode = PictureBoxSizeMode.Zoom,
-                BorderStyle = BorderStyle.FixedSingle,
-                BackColor = Color.Black
-            };
-            panel.Controls.Add(_previewPictureBox, 0, 14);
-            panel.SetColumnSpan(_previewPictureBox, 4);
-
-            // Row 15: Generate button
+            // Row 14: Generate button
             _generateButton = new Button
             {
                 Text = "Generate point_worldtext",
@@ -308,10 +308,10 @@ namespace CS2KZMappingTools
                 Anchor = AnchorStyles.Left | AnchorStyles.Right
             };
             _generateButton.Click += GenerateButton_Click;
-            panel.Controls.Add(_generateButton, 0, 15);
+            panel.Controls.Add(_generateButton, 0, 14);
             panel.SetColumnSpan(_generateButton, 4);
 
-            // Row 16: Status label (closer to generate button)
+            // Row 15: Status label (closer to generate button)
             _statusLabel = new Label
             {
                 Text = "",
@@ -320,7 +320,7 @@ namespace CS2KZMappingTools
                 ForeColor = Color.Green,
                 Margin = new Padding(0, 2, 0, 0)
             };
-            panel.Controls.Add(_statusLabel, 0, 16);
+            panel.Controls.Add(_statusLabel, 0, 15);
             panel.SetColumnSpan(_statusLabel, 4);
 
             // Event handlers for radio buttons
