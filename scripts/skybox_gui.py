@@ -84,7 +84,7 @@ class SkyboxConverterApp:
         self.show_done_popup = False
         
         # Window dimensions
-        self.base_window_height = 570
+        self.base_window_height = 700  # Increased to accommodate preview grid
           # Optimized for compact checkbox layout
         self.window_padding = 20
         
@@ -95,8 +95,8 @@ class SkyboxConverterApp:
         self._last_theme_for_font = None
         self._needs_font_reload = False
         
-        # Title icon
-        self.title_icon = None
+        # Texture cache for preview thumbnails
+        self.texture_cache = {}  # file_path -> (texture_id, width, height)
         
         # Cursors (will be created after window initialization)
         self.arrow_cursor = None
@@ -187,6 +187,9 @@ class SkyboxConverterApp:
                 self.status_message = f"Error: Please select exactly 6 files. You selected {len(file_paths)}"
                 self.status_color = (1.0, 0.0, 0.0, 1.0)
                 return
+            
+            # Clear old texture cache
+            self.clear_texture_cache()
             
             self.skybox_files = list(file_paths)
             self.skybox_files_status = f"Selected {len(file_paths)} files"
@@ -383,11 +386,39 @@ class SkyboxConverterApp:
         finally:
             self.conversion_in_progress = False
     
-    def load_texture(self, image_path):
-        """Load image texture for ImGui"""
+    def clear_texture_cache(self):
+        """Clear texture cache to free memory"""
+        for texture_id, _, _ in self.texture_cache.values():
+            if texture_id:
+                gl.glDeleteTextures(1, [texture_id])
+        self.texture_cache.clear()
+        """Load image texture with resizing and caching to prevent memory issues"""
+        # Check cache first
+        if image_path in self.texture_cache:
+            return self.texture_cache[image_path]
+        
         try:
             image = Image.open(image_path)
             image = image.convert("RGBA")
+            
+            # Resize image while preserving aspect ratio
+            width, height = image.size
+            aspect_ratio = width / height
+            
+            if width > max_width or height > max_height:
+                if width / max_width > height / max_height:
+                    new_width = max_width
+                    new_height = int(max_width / aspect_ratio)
+                else:
+                    new_height = max_height
+                    new_width = int(max_height * aspect_ratio)
+                
+                # Ensure we don't exceed the max dimensions
+                new_width = min(new_width, max_width)
+                new_height = min(new_height, max_height)
+                
+                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
             width, height = image.size
             image_data = image.tobytes()
             
@@ -397,9 +428,11 @@ class SkyboxConverterApp:
             gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
             gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, width, height, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, image_data)
             
+            # Cache the texture
+            self.texture_cache[image_path] = (texture_id, width, height)
             return texture_id, width, height
         except Exception as e:
-            print(f"Failed to load texture {image_path}: {e}")
+            print(f"Failed to load resized texture {image_path}: {e}")
             return None, 0, 0
     
     def init_imgui(self):
@@ -644,6 +677,34 @@ class SkyboxConverterApp:
         
         imgui.text_colored("(Select up, down, left, right, front, back - in any order)", 0.7, 0.7, 0.7, 1.0)
         
+        # Preview section - always visible when files are selected
+        if len(self.skybox_files) == 6:
+            imgui.separator()
+            imgui.spacing()
+            imgui.text("Preview:")
+            
+            # Create a grid layout for the 6 faces
+            face_names = ['Front', 'Back', 'Left', 'Right', 'Up', 'Down']
+            thumbnail_size = 64  # Small thumbnails to prevent memory issues
+            
+            for i, (file_path, face_name) in enumerate(zip(self.skybox_files, face_names)):
+                if i % 3 != 0:  # 3 faces per row
+                    imgui.same_line()
+                
+                # Load and display thumbnail
+                texture_id, tex_width, tex_height = self.load_texture_resized(file_path, thumbnail_size, thumbnail_size)
+                if texture_id:
+                    # Calculate aspect ratio for display
+                    aspect_ratio = tex_width / tex_height if tex_height > 0 else 1.0
+                    display_width = thumbnail_size
+                    display_height = thumbnail_size / aspect_ratio
+                    
+                    imgui.image(texture_id, display_width, display_height)
+                    imgui.text(face_name)
+                else:
+                    # Fallback if texture loading fails
+                    imgui.button(f"{face_name}\n(No Preview)", thumbnail_size, thumbnail_size)
+        
         imgui.separator()
         imgui.spacing()
         
@@ -799,6 +860,7 @@ class SkyboxConverterApp:
             glfw.swap_buffers(self.window)
         
         self.impl.shutdown()
+        self.clear_texture_cache()  # Clean up textures
         glfw.terminate()
 
 

@@ -2,7 +2,11 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using Microsoft.Win32;
+
+#nullable enable
 
 namespace CS2KZMappingTools
 {
@@ -374,34 +378,148 @@ namespace CS2KZMappingTools
             }
         }
         
+        private string? FindCs2Path()
+        {
+            try
+            {
+                // Get Steam path from registry
+                using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
+                if (key?.GetValue("SteamPath") is string steamPath)
+                {
+                    var libraryFoldersPath = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+                    var cs2Path = FindCs2LibraryPath(libraryFoldersPath);
+
+                    if (!string.IsNullOrEmpty(cs2Path))
+                    {
+                        var appManifestPath = Path.Combine(cs2Path, "steamapps", "appmanifest_730.acf");
+                        if (File.Exists(appManifestPath))
+                        {
+                            // Parse the VDF file to get install directory
+                            var installDir = ParseAppManifest(appManifestPath);
+                            if (!string.IsNullOrEmpty(installDir))
+                            {
+                                cs2Path = Path.Combine(cs2Path, "steamapps", "common", installDir);
+                                return cs2Path;
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Handle error silently for dialog
+            }
+
+            return null;
+        }
+
+        private string? FindCs2LibraryPath(string libraryFoldersPath)
+        {
+            if (!File.Exists(libraryFoldersPath)) return null;
+
+            try
+            {
+                var content = File.ReadAllText(libraryFoldersPath);
+                // Simple VDF parsing - look for library folders containing app 730
+                var lines = content.Split('\n');
+                string currentPath = null;
+
+                foreach (var line in lines)
+                {
+                    var trimmed = line.Trim();
+                    if (trimmed.Contains("\"path\""))
+                    {
+                        var match = Regex.Match(trimmed, "\"path\"\\s+\"([^\"]+)\"");
+                        if (match.Success)
+                        {
+                            currentPath = match.Groups[1].Value.Replace("\\\\", "\\");
+                        }
+                    }
+                    else if (trimmed.Contains("\"730\"") && currentPath != null)
+                    {
+                        return currentPath;
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private string? ParseAppManifest(string appManifestPath)
+        {
+            try
+            {
+                var content = File.ReadAllText(appManifestPath);
+                var match = Regex.Match(content, "\"installdir\"\\s+\"([^\"]+)\"");
+                return match.Success ? match.Groups[1].Value : null;
+            }
+            catch { }
+            return null;
+        }
+        
         private void LoadAvailableAddons()
         {
             try
             {
-                var addonsPath = @"D:\SteamLibrary\steamapps\common\Counter-Strike Global Offensive\content\csgo_addons";
-                if (Directory.Exists(addonsPath))
+                var cs2Path = FindCs2Path();
+                if (string.IsNullOrEmpty(cs2Path))
                 {
-                    var addonDirs = Directory.GetDirectories(addonsPath)
-                        .Select(Path.GetFileName)
-                        .Where(name => !string.IsNullOrEmpty(name))
-                        .OrderBy(name => name)
-                        .Cast<object>()
-                        .ToArray();
-                    
-                    _addonComboBox.Items.AddRange(addonDirs);
-                    
-                    if (_addonComboBox.Items.Count > 0)
-                    {
-                        _addonComboBox.SelectedIndex = 0;
-                    }
-                }
-                else
-                {
-                    _addonComboBox.Items.Add("CS2 addons folder not found");
+                    _addonComboBox.Items.Add("CS2 installation not found");
                     _addonComboBox.SelectedIndex = 0;
                     _addonComboBox.Enabled = false;
                     _addonPathRadio.Enabled = false;
                     _customPathRadio.Checked = true;
+                    return;
+                }
+
+                var addonsPath = Path.Combine(cs2Path, "content", "csgo_addons");
+                if (Directory.Exists(addonsPath))
+                {
+                    var addonDirs = Directory.GetDirectories(addonsPath)
+                        .Select(Path.GetFileName)
+                        .Where(name => !string.IsNullOrEmpty(name) && 
+                                      !name.Equals("addon_template", StringComparison.OrdinalIgnoreCase) &&
+                                      !name.Equals("addontemplate", StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(name => name)
+                        .Cast<object>()
+                        .ToArray();
+                    
+                    if (addonDirs.Length > 0)
+                    {
+                        _addonComboBox.Items.AddRange(addonDirs);
+                        _addonComboBox.SelectedIndex = 0;
+                    }
+                    else
+                    {
+                        _addonComboBox.Items.Add("No addons found (create one in CS2 Workshop Tools first)");
+                        _addonComboBox.SelectedIndex = 0;
+                        _addonComboBox.Enabled = false;
+                        _addonPathRadio.Enabled = false;
+                        _customPathRadio.Checked = true;
+                    }
+                }
+                else
+                {
+                    // Try to create the addons directory
+                    try
+                    {
+                        Directory.CreateDirectory(addonsPath);
+                        _addonComboBox.Items.Add("No addons found (create one in CS2 Workshop Tools first)");
+                        _addonComboBox.SelectedIndex = 0;
+                        _addonComboBox.Enabled = false;
+                        _addonPathRadio.Enabled = false;
+                        _customPathRadio.Checked = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Cannot access CS2 addons folder at {addonsPath}.\nError: {ex.Message}\n\nPlease ensure CS2 Workshop Tools is installed and you have write access to the CS2 directory.", "Access Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        _addonComboBox.Items.Add("Cannot access CS2 addons folder");
+                        _addonComboBox.SelectedIndex = 0;
+                        _addonComboBox.Enabled = false;
+                        _addonPathRadio.Enabled = false;
+                        _customPathRadio.Checked = true;
+                    }
                 }
             }
             catch (Exception ex)
@@ -641,7 +759,7 @@ namespace CS2KZMappingTools
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // If preview generation fails, just clear the preview
                 _previewPictureBox.Image?.Dispose();
@@ -661,8 +779,10 @@ namespace CS2KZMappingTools
                 
                 return result != null ? TempPreviewPath : null;
             }
-            catch
+            catch (Exception ex)
             {
+                // Show error for debugging
+                MessageBox.Show($"Preview generation failed: {ex.Message}", "Preview Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return null;
             }
         }

@@ -9,6 +9,8 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+#nullable enable
+
 namespace CS2KZMappingTools
 {
     public class CustomColorTable : ProfessionalColorTable
@@ -174,7 +176,30 @@ namespace CS2KZMappingTools
             // Load window position
             if (_settings.WindowPosition.X != -1)
             {
-                this.Location = _settings.WindowPosition;
+                // Check if the saved position is visible on any screen
+                var savedLocation = _settings.WindowPosition;
+                var isVisible = false;
+                
+                foreach (var screen in Screen.AllScreens)
+                {
+                    // Check if at least some portion of the window would be visible
+                    var formRect = new Rectangle(savedLocation.X, savedLocation.Y, this.Width, this.Height);
+                    if (screen.WorkingArea.IntersectsWith(formRect))
+                    {
+                        isVisible = true;
+                        break;
+                    }
+                }
+                
+                if (isVisible)
+                {
+                    this.Location = savedLocation;
+                }
+                else
+                {
+                    // Position is off-screen, center on primary screen
+                    CenterToScreen();
+                }
             }
             else
             {
@@ -208,13 +233,14 @@ namespace CS2KZMappingTools
             // Setup Metamod update checker
             _metamodUpdater = new MetamodUpdater();
             _updateCheckTimer = new System.Windows.Forms.Timer();
-            _updateCheckTimer.Interval = 10000; // Check local every 10 seconds, remote every 5 minutes
+            _updateCheckTimer.Interval = 3600000; // Check for updates every 1 hour (3,600,000 ms)
             _updateCheckTimer.Tick += UpdateCheckTimer_Tick;
             _updateCheckTimer.Start();
             
             // Do initial update check after form is shown
             this.Shown += async (s, e) =>
             {
+                OnLogMessage("[Update Check] Checking for updates on startup...");
                 await CheckMetamodUpdatesAsync();
                 await CheckSource2ViewerVersionAsync();
             };
@@ -1835,10 +1861,10 @@ namespace CS2KZMappingTools
         private async void UpdateCheckTimer_Tick(object? sender, EventArgs e)
         {
             _updateCheckCount++;
-            bool checkRemote = (_updateCheckCount % 30 == 0); // Check remote every 5 minutes (every 30th tick)
-            
-            await CheckMetamodUpdatesAsync(checkRemote: checkRemote);
-            await CheckSource2ViewerVersionAsync(checkRemote: checkRemote);
+            OnLogMessage($"[Update Check] Running hourly check #{_updateCheckCount}...");
+            // Timer runs every hour, so always check remote
+            await CheckMetamodUpdatesAsync(checkRemote: true);
+            await CheckSource2ViewerVersionAsync(checkRemote: true);
         }
         
         private async Task CheckMetamodUpdatesAsync(bool checkRemote = true)
@@ -1852,22 +1878,121 @@ namespace CS2KZMappingTools
                 if (!string.IsNullOrEmpty(status.Error))
                 {
                     Debug.WriteLine($"Update check error: {status.Error}");
+                    if (checkRemote) // Only log remote check failures to console
+                    {
+                        if (status.Error.Contains("rate limit") || status.Error.Contains("403"))
+                        {
+                            OnLogMessage($"[Update Check] GitHub API rate limit exceeded for Metamod/CS2KZ. Will retry in 1 hour.");
+                        }
+                        else
+                        {
+                            OnLogMessage($"[Update Check] Failed to check Metamod/CS2KZ updates: {status.Error}");
+                        }
+                    }
+                    
+                    // When remote check fails but components are installed, show green (assume up-to-date)
+                    // When remote check fails and not installed, show red
+                    bool errorNotInstalled = !status.MetamodInstalled || !status.CS2KZInstalled;
+                    
+                    // Cache the status - remote check failed, so no updates available
+                    _metamodButtonsNotInstalled = errorNotInstalled;
+                    _metamodButtonsHaveUpdate = false; // Can't determine, assume no update
+                    _metamodButtonsUpToDate = !errorNotInstalled; // If installed, assume up-to-date
+                    
+                    // Update indicators
+                    string[] errorMetamodButtons = { "mapping", "listen", "dedicated_server", "insecure" };
+                    foreach (var buttonId in errorMetamodButtons)
+                    {
+                        if (_buttons.ContainsKey(buttonId))
+                        {
+                            if (this.InvokeRequired)
+                            {
+                                this.Invoke((Action)(() =>
+                                {
+                                    if (errorNotInstalled)
+                                        _buttons[buttonId].SetNotInstalled(true);
+                                    else
+                                        _buttons[buttonId].SetUpToDate(true); // Show green if installed
+                                }));
+                            }
+                            else
+                            {
+                                if (errorNotInstalled)
+                                    _buttons[buttonId].SetNotInstalled(true);
+                                else
+                                    _buttons[buttonId].SetUpToDate(true); // Show green if installed
+                            }
+                        }
+                    }
                     return;
                 }
                 
                 // Determine if not installed at all
                 bool notInstalled = !status.MetamodInstalled || !status.CS2KZInstalled;
                 
-                // Determine if updates are needed (only check if installed)
-                bool hasUpdate = !notInstalled && (status.MetamodUpdateAvailable || 
+                // Determine if updates are needed (only check if installed and remote check succeeded)
+                bool hasUpdate = !notInstalled && checkRemote && (status.MetamodUpdateAvailable || 
                                 status.CS2KZUpdateAvailable || 
                                 status.MappingAPIUpdateAvailable);
                 
-                // Check if everything is installed and up to date
-                bool isUpToDate = !notInstalled && status.MetamodInstalled && status.CS2KZInstalled && 
+                // Check if everything is installed and up to date (or remote check wasn't done)
+                bool isUpToDate = !notInstalled && (!checkRemote || (status.MetamodInstalled && status.CS2KZInstalled && 
                                  !status.MetamodUpdateAvailable && 
                                  !status.CS2KZUpdateAvailable && 
-                                 !status.MappingAPIUpdateAvailable;
+                                 !status.MappingAPIUpdateAvailable));
+                
+                OnLogMessage($"[Update Check] Metamod: {(status.MetamodInstalled ? (hasUpdate && status.MetamodUpdateAvailable ? "Update Available" : "Up-to-date") : "Not Installed")}");
+                OnLogMessage($"[Update Check] CS2KZ: {(status.CS2KZInstalled ? (hasUpdate && status.CS2KZUpdateAvailable ? "Update Available" : "Up-to-date") : "Not Installed")}");
+                if (checkRemote && status.MappingAPIUpdateAvailable)
+                {
+                    OnLogMessage($"[Update Check] Mapping API: Update Available");
+                }
+                
+                // Save latest version info for MappingManager to use (avoid redundant GitHub calls)
+                if (checkRemote)
+                {
+                    try
+                    {
+                        string versionFile = Path.Combine(Path.GetTempPath(), ".CS2KZ-mapping-tools", "cs2kz_versions.txt");
+                        var versions = new Dictionary<string, string>();
+                        
+                        // Load existing versions
+                        if (File.Exists(versionFile))
+                        {
+                            foreach (var line in File.ReadAllLines(versionFile))
+                            {
+                                if (line.Contains('='))
+                                {
+                                    var parts = line.Split(new[] { '=' }, 2);
+                                    if (parts.Length == 2)
+                                    {
+                                        versions[parts[0].Trim()] = parts[1].Trim();
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Update with latest versions from remote check
+                        if (!string.IsNullOrEmpty(status.MetamodLatestVersion))
+                            versions["metamod_latest"] = status.MetamodLatestVersion;
+                        if (!string.IsNullOrEmpty(status.CS2KZLatestVersion))
+                            versions["cs2kz_latest"] = status.CS2KZLatestVersion;
+                        if (!string.IsNullOrEmpty(status.MappingAPILatestHash))
+                            versions["mapping_api_latest"] = status.MappingAPILatestHash;
+                        
+                        // Write back
+                        var lines = new List<string>();
+                        foreach (var kvp in versions)
+                        {
+                            lines.Add($"{kvp.Key}={kvp.Value}");
+                        }
+                        File.WriteAllLines(versionFile, lines);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Failed to save latest version info: {ex.Message}");
+                    }
+                }
                 
                 Debug.WriteLine($"Metamod Check - MetamodInstalled: {status.MetamodInstalled}, CS2KZInstalled: {status.CS2KZInstalled}");
                 Debug.WriteLine($"Metamod Status - NotInstalled: {notInstalled}, HasUpdate: {hasUpdate}, IsUpToDate: {isUpToDate}");
@@ -1916,7 +2041,8 @@ namespace CS2KZMappingTools
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Update check failed: {ex.Message}");
+                Debug.WriteLine($"Metamod update check failed: {ex.Message}");
+                OnLogMessage($"[Update Check] Failed to check Metamod/CS2KZ updates: {ex.Message}");
             }
         }
         
@@ -1971,15 +2097,15 @@ namespace CS2KZMappingTools
                         break;
                     
                     case "skyboxconverter":
-                        LaunchScript("skybox_gui.py");
+                        ShowSkyboxConverterForm();
                         break;
                     
                     case "vtf2png":
-                        LaunchScript("vtf2png_gui.py");
+                        ShowVTF2PNGForm();
                         break;
                     
                     case "loading_screen":
-                        LaunchScript("loading_screen_gui.py");
+                        ShowLoadingScreenForm();
                         break;
                     
                     case "point_worldtext":
@@ -2121,10 +2247,11 @@ namespace CS2KZMappingTools
                     }
                 };
                 
-                updater.StatusChanged += (s, status) =>
+                updater.StatusChanged += (_, status) =>
                 {
                     Debug.WriteLine($"S2V: {status}");
                     statusMessages.AppendLine(status);
+                    OnLogMessage($"[S2V] {status}");
                 };
                 
                 // Clear progress indicator when done
@@ -2161,16 +2288,45 @@ namespace CS2KZMappingTools
             try
             {
                 var updater = new Source2ViewerUpdater();
+                updater.StatusChanged += (_, status) => 
+                {
+                    // Skip logging version file reads to avoid spam
+                    if (!status.StartsWith("Local version from file:"))
+                    {
+                        OnLogMessage($"[S2V] {status}");
+                    }
+                };
                 string? remoteVersion = checkRemote ? await updater.GetRemoteVersionAsync() : null;
                 string localVersion = updater.GetLocalVersion();
                 
                 // Determine status
                 // Show red dot if: not installed at all
                 bool notInstalled = localVersion == "0";
-                // Show yellow dot if: installed but remote check succeeded AND version mismatch
+                // Show orange dot if: installed but remote check succeeded AND version mismatch
                 bool hasUpdate = !notInstalled && !string.IsNullOrEmpty(remoteVersion) && localVersion != remoteVersion;
                 // Show green dot if: installed AND (versions match OR remote check failed)
                 bool isUpToDate = !notInstalled && (string.IsNullOrEmpty(remoteVersion) || localVersion == remoteVersion);
+                
+                // Log summary
+                if (notInstalled)
+                {
+                    OnLogMessage($"[Update Check] Source2Viewer: Not Installed");
+                }
+                else if (!string.IsNullOrEmpty(remoteVersion))
+                {
+                    if (hasUpdate)
+                    {
+                        OnLogMessage($"[Update Check] Source2Viewer: Update Available ({localVersion} -> {remoteVersion})");
+                    }
+                    else
+                    {
+                        OnLogMessage($"[Update Check] Source2Viewer: Up-to-date ({localVersion})");
+                    }
+                }
+                else
+                {
+                    OnLogMessage($"[Update Check] Source2Viewer: Installed ({localVersion}), remote check skipped/failed");
+                }
                 
                 // Cache the status
                 _s2vNotInstalled = notInstalled;
@@ -2234,8 +2390,10 @@ namespace CS2KZMappingTools
                     Debug.WriteLine("S2V button NOT found in _buttons dictionary!");
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"S2V update check failed: {ex.Message}");
+                OnLogMessage($"[Update Check] Failed to check Source2Viewer updates: {ex.Message}");
             }
         }
 
@@ -2259,6 +2417,9 @@ namespace CS2KZMappingTools
                     _settings.AutoUpdateCS2KZ);
                     
                 OnLogMessage("Mapping tool launched successfully!");
+                
+                // Re-check status after launch to update indicators (don't check remote, just local)
+                await CheckMetamodUpdatesAsync(checkRemote: false);
             }
             catch (Exception ex)
             {
@@ -2602,6 +2763,51 @@ if __name__ == '__main__':
             catch (Exception ex)
             {
                 MessageBox.Show($"Error verifying files: {ex.Message}", 
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ShowLoadingScreenForm()
+        {
+            try
+            {
+                var loadingScreenForm = new LoadingScreenForm(_themeManager);
+                loadingScreenForm.LogMessage += OnLogMessage;
+                loadingScreenForm.Show();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening Loading Screen Creator: {ex.Message}", 
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ShowVTF2PNGForm()
+        {
+            try
+            {
+                var vtf2pngForm = new VTF2PNGForm(_themeManager);
+                vtf2pngForm.LogMessage += OnLogMessage;
+                vtf2pngForm.Show();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening VTF to PNG Converter: {ex.Message}", 
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ShowSkyboxConverterForm()
+        {
+            try
+            {
+                var skyboxConverterForm = new SkyboxConverterForm(_themeManager);
+                skyboxConverterForm.LogMessage += OnLogMessage;
+                skyboxConverterForm.Show();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening Skybox Converter: {ex.Message}", 
                     "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }

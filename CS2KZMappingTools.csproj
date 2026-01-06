@@ -13,6 +13,10 @@
     <Authors>jakkekz</Authors>
     <Product>CS2KZ Mapping Tools</Product>
     <Copyright>Copyright © 2025</Copyright>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    
+    <!-- Suppress NuGet vulnerability warnings for ImageMagick (acceptable for local desktop tool) -->
+    <NoWarn>$(NoWarn);NU1901;NU1902;NU1903</NoWarn>
     
     <!-- Single file publish settings -->
     <PublishSingleFile>true</PublishSingleFile>
@@ -27,6 +31,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Magick.NET-Q16-AnyCPU" Version="14.2.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
   </ItemGroup>

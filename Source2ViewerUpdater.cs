@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -18,6 +19,7 @@ namespace CS2KZMappingTools
         private readonly string _appExecutable;
         private readonly string _versionFile;
         private readonly string _downloadFlagFile;
+        private int _lastLoggedProgress = -1;
         
         public event EventHandler<int>? DownloadProgressChanged;
         public event EventHandler<string>? StatusChanged;
@@ -75,6 +77,51 @@ namespace CS2KZMappingTools
         
         public string GetLocalVersion()
         {
+            // First try to read from version file
+            if (File.Exists(_versionFile))
+            {
+                try
+                {
+                    foreach (var line in File.ReadAllLines(_versionFile))
+                    {
+                        if (line.Contains('='))
+                        {
+                            var parts = line.Split(new[] { '=' }, 2);
+                            if (parts.Length == 2 && parts[0].Trim() == "source2viewer")
+                            {
+                                string version = parts[1].Trim();
+                                if (!string.IsNullOrEmpty(version) && version != "0")
+                                {
+                                    // Check if exe actually exists - if not, consider it not installed
+                                    if (File.Exists(_appExecutable))
+                                    {
+                                        StatusChanged?.Invoke(this, $"Local version from file: {version}");
+                                        return version;
+                                    }
+                                    else
+                                    {
+                                        StatusChanged?.Invoke(this, "Version file exists but executable not found - considering not installed");
+                                        // Remove stale version info from file
+                                        try
+                                        {
+                                            var lines = File.ReadAllLines(_versionFile).ToList();
+                                            lines.RemoveAll(line => line.StartsWith("source2viewer=") || line.StartsWith("source2viewer_latest="));
+                                            File.WriteAllLines(_versionFile, lines);
+                                        }
+                                        catch { }
+                                        return "0";
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    StatusChanged?.Invoke(this, $"Error reading version file: {ex.Message}");
+                }
+            }
+            
             if (!File.Exists(_appExecutable))
             {
                 StatusChanged?.Invoke(this, "No local installation found");
@@ -86,18 +133,18 @@ namespace CS2KZMappingTools
                 var versionInfo = FileVersionInfo.GetVersionInfo(_appExecutable);
                 string? productVersion = versionInfo.ProductVersion;
                 
-                StatusChanged?.Invoke(this, $"Reading exe ProductVersion: {productVersion}");
+                StatusChanged?.Invoke(this, $"Reading exe ProductVersion: {productVersion ?? "null"}");
                 
                 if (!string.IsNullOrEmpty(productVersion))
                 {
                     // Try to extract SHA - could be "1.0.0+abc12345" or just "abc12345"
-                    string sha = productVersion;
+                    string sha = productVersion!;
                     
                     // If it has a + sign, take everything after it
-                    int plusIndex = productVersion.IndexOf('+');
-                    if (plusIndex >= 0 && plusIndex + 1 < productVersion.Length)
+                    int plusIndex = sha.IndexOf('+');
+                    if (plusIndex >= 0 && plusIndex + 1 < sha.Length)
                     {
-                        sha = productVersion.Substring(plusIndex + 1);
+                        sha = sha.Substring(plusIndex + 1);
                     }
                     
                     // Clean up the SHA - take first 8 characters
@@ -130,6 +177,7 @@ namespace CS2KZMappingTools
                 
                 StatusChanged?.Invoke(this, "Downloading Source2Viewer...");
                 DownloadProgressChanged?.Invoke(this, 0);
+                _lastLoggedProgress = -1; // Reset progress tracking
                 
                 using var client = new HttpClient();
                 client.Timeout = TimeSpan.FromMinutes(5);
@@ -155,7 +203,11 @@ namespace CS2KZMappingTools
                     {
                         int progress = (int)((totalRead * 100) / totalBytes.Value);
                         DownloadProgressChanged?.Invoke(this, progress);
-                        StatusChanged?.Invoke(this, $"Downloading... {progress}%");
+                        if (progress != _lastLoggedProgress)
+                        {
+                            StatusChanged?.Invoke(this, $"Downloading... {progress}%");
+                            _lastLoggedProgress = progress;
+                        }
                     }
                 }
                 

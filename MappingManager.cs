@@ -266,13 +266,23 @@ namespace CS2KZMappingTools
                 const string targetLine = "			Game	csgo";
                 const string newLine = "			Game	csgo/addons/metamod";
 
+                bool metamodAlreadyAdded = lines.Any(l => l.Contains("csgo/addons/metamod"));
+
                 foreach (var line in lines)
                 {
                     if (line.Trim() == targetLine.Trim())
                     {
-                        modifiedLines.Add(newLine);
+                        // Only add metamod line if not already present
+                        if (!metamodAlreadyAdded)
+                        {
+                            modifiedLines.Add(newLine);
+                        }
+                        modifiedLines.Add(line);
                     }
-                    modifiedLines.Add(line);
+                    else
+                    {
+                        modifiedLines.Add(line);
+                    }
                 }
 
                 await File.WriteAllLinesAsync(gameInfoPath, modifiedLines);
@@ -744,24 +754,25 @@ namespace CS2KZMappingTools
 
             var currentVersions = await LoadVersionsAsync();
 
-            if (checkMetamod)
+            // Check if we have latest versions cached (from the centralized update checker)
+            var latestMetamod = currentVersions.GetValueOrDefault("metamod_latest");
+            var latestCS2KZ = currentVersions.GetValueOrDefault("cs2kz_latest");
+            var latestMappingApi = currentVersions.GetValueOrDefault("mapping_api_latest");
+
+            if (checkMetamod && !string.IsNullOrEmpty(latestMetamod))
             {
-                var latestMetamod = await GetLatestMetamodVersionAsync();
-                if (!string.IsNullOrEmpty(latestMetamod) && currentVersions.GetValueOrDefault("metamod") != latestMetamod)
+                if (currentVersions.GetValueOrDefault("metamod") != latestMetamod)
                 {
-                    Log("Metamod update available - setup needed.");
+                    Log($"Metamod update available ({currentVersions.GetValueOrDefault("metamod")} -> {latestMetamod}) - setup needed.");
                     return true;
                 }
             }
 
             if (checkCS2KZ)
             {
-                var latestCS2KZ = await GetLatestCS2KZVersionAsync();
-                var latestMappingApi = await GetMappingApiHashAsync();
-                
                 if (!string.IsNullOrEmpty(latestCS2KZ) && currentVersions.GetValueOrDefault("cs2kz") != latestCS2KZ)
                 {
-                    Log("CS2KZ update available - setup needed.");
+                    Log($"CS2KZ update available ({currentVersions.GetValueOrDefault("cs2kz")} -> {latestCS2KZ}) - setup needed.");
                     return true;
                 }
                 
@@ -840,12 +851,14 @@ namespace CS2KZMappingTools
                     Arguments = "-insecure -gpuraytracing",
                     WorkingDirectory = cs2ToolsPath,
                     UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    RedirectStandardInput = true
+                    CreateNoWindow = false,  // Changed from true - Python uses CREATE_NEW_CONSOLE
+                    RedirectStandardOutput = false,  // Changed from true - Python uses DEVNULL with detached process
+                    RedirectStandardError = false,   // Changed from true
+                    RedirectStandardInput = false    // Changed from true
                 };
 
+                // Python uses creationflags=0x208 which is CREATE_NEW_CONSOLE (0x10) + DETACHED_PROCESS (0x08)
+                // In C# we achieve this by not redirecting streams and allowing a new console
                 var process = Process.Start(startInfo);
                 
                 // Wait for CS2 to actually start (give it time to launch)
@@ -1014,14 +1027,15 @@ namespace CS2KZMappingTools
                 response.EnsureSuccessStatusCode();
                 
                 var data = await response.Content.ReadAsByteArrayAsync();
-                var content = Encoding.UTF8.GetString(data).Replace("\n", "\r\n");
                 
                 var directory = Path.GetDirectoryName(outputPath);
                 if (!string.IsNullOrEmpty(directory))
                 {
                     Directory.CreateDirectory(directory);
                 }
-                await File.WriteAllTextAsync(outputPath, content, Encoding.UTF8);
+                
+                // Write bytes directly to avoid BOM issues with FGD files
+                await File.WriteAllBytesAsync(outputPath, data);
                 
                 Log($"✓ Downloaded {Path.GetFileName(outputPath)}");
                 ProgressUpdated?.Invoke(1, 1); // Complete
@@ -1045,6 +1059,19 @@ namespace CS2KZMappingTools
 
                 Log($"CS2 path found: {cs2Path}");
 
+                // Backup files BEFORE setup to ensure they exist
+                var gameInfoPath = Path.Combine(cs2Path, "game", "csgo", "gameinfo.gi");
+                var coreGameInfoPath = Path.Combine(cs2Path, "game", "csgo_core", "gameinfo.gi");
+                
+                // If gameinfo files don't exist, restore them first
+                if (!File.Exists(gameInfoPath) || !File.Exists(coreGameInfoPath))
+                {
+                    Log("GameInfo files missing, restoring from Steam database before backup...");
+                    await VerifyGameInfoAsync(cs2Path);
+                }
+
+                var (gameInfo, backup, coreGameInfo, coreBackup) = await BackupFilesAsync(cs2Path);
+
                 if (await CheckSetupNeededAsync(cs2Path, updateMetamod, updateCS2KZ))
                 {
                     Log("Setup needed - running installation...");
@@ -1055,7 +1082,6 @@ namespace CS2KZMappingTools
                     Log("Setup check passed - files up to date.");
                 }
 
-                var (gameInfo, backup, coreGameInfo, coreBackup) = await BackupFilesAsync(cs2Path);
                 await ModifyGameInfoAsync(gameInfo, coreGameInfo);
                 await EnableParticleEditorAsync(cs2Path);
 

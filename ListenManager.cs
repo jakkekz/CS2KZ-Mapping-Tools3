@@ -779,7 +779,7 @@ namespace CS2KZMappingTools
             }
         }
 
-        public async Task<bool> CheckSetupNeededAsync(string cs2Dir, bool checkMetamod = true, bool checkCS2KZ = true)
+        public Task<bool> CheckSetupNeededAsync(string cs2Dir, bool checkMetamod = true, bool checkCS2KZ = true)
         {
             Log("Checking if setup is needed...");
             
@@ -789,12 +789,12 @@ namespace CS2KZMappingTools
             if (!Directory.Exists(metamodPath) || !Directory.Exists(cs2kzPath))
             {
                 Log("Required directories missing - setup needed");
-                return true;
+                return Task.FromResult(true);
             }
             
             // Force setup for now to ensure everything is properly installed
             Log("Forcing setup to ensure proper installation");
-            return true;
+            return Task.FromResult(true);
             
             /*
             var currentVersions = LoadVersions(cs2Dir);

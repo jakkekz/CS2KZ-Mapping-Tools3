@@ -896,6 +896,20 @@ def stitch_cubemap_rotated(filenames_map, output_file_path, temp_dir):
         # Load all images first
         for face, path in png_paths_map.items():
             img = Image.open(path).convert("RGBA")
+            
+            # Resize image to prevent out-of-memory errors (max 256x256, preserve aspect ratio)
+            width, height = img.size
+            max_size = 256
+            if width > max_size or height > max_size:
+                if width > height:
+                    new_width = max_size
+                    new_height = int(height * max_size / width)
+                else:
+                    new_height = max_size
+                    new_width = int(width * max_size / height)
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                print(f"Resized {face} from {width}x{height} to {new_width}x{new_height}")
+            
             images[face] = img
             w, h = img.size
             if w >= MIN_SIZE and h >= MIN_SIZE:

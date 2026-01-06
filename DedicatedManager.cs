@@ -19,8 +19,10 @@ namespace CS2KZMappingTools
 
         public event Action<string>? LogMessage;
         public event Action<string>? LogEvent;
+#pragma warning disable CS0067 // The events are declared but never used
         public event Action<int, int>? ProgressUpdated;
         public event Action? ProgressIndeterminate;
+#pragma warning restore CS0067
 
         private void Log(string message)
         {

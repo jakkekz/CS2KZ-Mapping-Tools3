@@ -4,8 +4,10 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace CS2KZMappingTools
 {
@@ -25,9 +27,11 @@ namespace CS2KZMappingTools
             }
             else
             {
-                // Simple approach - just use the correct path directly
-                charsFolder = @"C:\Users\jaakk\.jakke\CS2KZ-Mapping-Tools2\chars";
-                Log($"Using hardcoded chars folder path: {charsFolder}");
+                // Use the chars folder in the project root (4 levels up from bin directory)
+                var exeDir = AppDomain.CurrentDomain.BaseDirectory;
+                var projectRoot = Path.GetFullPath(Path.Combine(exeDir, "..", "..", "..", ".."));
+                charsFolder = Path.Combine(projectRoot, "chars");
+                Log($"Using chars folder path: {charsFolder}");
             }
             
             characterImages = new Dictionary<string, Bitmap>();
@@ -39,6 +43,97 @@ namespace CS2KZMappingTools
         {
             LogMessage?.Invoke(message);
             LogEvent?.Invoke(message);
+        }
+
+        private string? FindCs2Path()
+        {
+            try
+            {
+                // Get Steam path from registry
+                using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
+                if (key?.GetValue("SteamPath") is string steamPath)
+                {
+                    var libraryFoldersPath = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+                    var cs2Path = FindCs2LibraryPath(libraryFoldersPath);
+
+                    if (!string.IsNullOrEmpty(cs2Path))
+                    {
+                        var appManifestPath = Path.Combine(cs2Path, "steamapps", "appmanifest_730.acf");
+                        if (File.Exists(appManifestPath))
+                        {
+                            // Parse the VDF file to get install directory
+                            var installDir = ParseAppManifest(appManifestPath);
+                            if (!string.IsNullOrEmpty(installDir))
+                            {
+                                cs2Path = Path.Combine(cs2Path, "steamapps", "common", installDir);
+                                Log($"Found CS2 at: {cs2Path}");
+                                return cs2Path;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error finding CS2 path: {ex.Message}");
+            }
+
+            Log("Could not find CS2 installation automatically");
+            return null;
+        }
+
+        private string? FindCs2LibraryPath(string libraryFoldersPath)
+        {
+            if (!File.Exists(libraryFoldersPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                var content = File.ReadAllText(libraryFoldersPath);
+                // Simple VDF parsing - look for library folders containing app 730
+                var lines = content.Split('\n');
+                string currentPath = null;
+
+                foreach (var line in lines)
+                {
+                    var trimmed = line.Trim();
+                    if (trimmed.Contains("\"path\""))
+                    {
+                        var match = Regex.Match(trimmed, "\"path\"\\s+\"([^\"]+)\"");
+                        if (match.Success)
+                        {
+                            currentPath = match.Groups[1].Value.Replace("\\\\", "\\");
+                        }
+                    }
+                    else if (trimmed.Contains("\"730\"") && currentPath != null)
+                    {
+                        return currentPath;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error parsing library folders: {ex.Message}");
+            }
+
+            return null;
+        }
+
+        private string? ParseAppManifest(string appManifestPath)
+        {
+            try
+            {
+                var content = File.ReadAllText(appManifestPath);
+                var match = Regex.Match(content, "\"installdir\"\\s+\"([^\"]+)\"");
+                return match.Success ? match.Groups[1].Value : null;
+            }
+            catch (Exception ex)
+            {
+                Log($"Error parsing app manifest: {ex.Message}");
+            }
+            return null;
         }
 
         private void LoadCharacterImages()
@@ -145,10 +240,16 @@ namespace CS2KZMappingTools
 
                 if (!string.IsNullOrEmpty(addonName))
                 {
+                    // Find CS2 path dynamically
+                    var cs2Path = FindCs2Path();
+                    if (string.IsNullOrEmpty(cs2Path))
+                    {
+                        Log("Could not find CS2 installation path");
+                        return null;
+                    }
+
                     // Use addon directory
-                    var addonPath = Path.Combine(
-                        @"D:\SteamLibrary\steamapps\common\Counter-Strike Global Offensive\content\csgo_addons",
-                        addonName, "materials", "point_worldtext");
+                    var addonPath = Path.Combine(cs2Path, "content", "csgo_addons", addonName, "materials", "point_worldtext");
                     
                     // Create directory if it doesn't exist
                     Directory.CreateDirectory(addonPath);
