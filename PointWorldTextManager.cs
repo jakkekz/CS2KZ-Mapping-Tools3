@@ -53,19 +53,40 @@ namespace CS2KZMappingTools
                 using var key = Registry.CurrentUser.OpenSubKey(@"Software\Valve\Steam");
                 if (key?.GetValue("SteamPath") is string steamPath)
                 {
+                    // Try both casings for libraryfolders.vdf
                     var libraryFoldersPath = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+                    if (!File.Exists(libraryFoldersPath))
+                    {
+                        libraryFoldersPath = Path.Combine(steamPath, "SteamApps", "libraryfolders.vdf");
+                    }
+                    
                     var cs2Path = FindCs2LibraryPath(libraryFoldersPath);
 
                     if (!string.IsNullOrEmpty(cs2Path))
                     {
+                        // Try both casings for appmanifest
                         var appManifestPath = Path.Combine(cs2Path, "steamapps", "appmanifest_730.acf");
+                        if (!File.Exists(appManifestPath))
+                        {
+                            appManifestPath = Path.Combine(cs2Path, "SteamApps", "appmanifest_730.acf");
+                        }
+                        
                         if (File.Exists(appManifestPath))
                         {
                             // Parse the VDF file to get install directory
                             var installDir = ParseAppManifest(appManifestPath);
                             if (!string.IsNullOrEmpty(installDir))
                             {
+                                // Try both casings for common folder
                                 cs2Path = Path.Combine(cs2Path, "steamapps", "common", installDir);
+                                if (!Directory.Exists(cs2Path))
+                                {
+                                    var steamAppsPath = cs2Path.Replace("steamapps", "SteamApps");
+                                    if (Directory.Exists(steamAppsPath))
+                                    {
+                                        cs2Path = steamAppsPath;
+                                    }
+                                }
                                 Log($"Found CS2 at: {cs2Path}");
                                 return cs2Path;
                             }
@@ -91,11 +112,25 @@ namespace CS2KZMappingTools
 
             try
             {
+                // Check default Steam location first
+                var steamPath = Path.GetDirectoryName(Path.GetDirectoryName(libraryFoldersPath));
+                if (!string.IsNullOrEmpty(steamPath))
+                {
+                    var defaultManifest = Path.Combine(steamPath, "steamapps", "appmanifest_730.acf");
+                    if (!File.Exists(defaultManifest))
+                    {
+                        defaultManifest = Path.Combine(steamPath, "SteamApps", "appmanifest_730.acf");
+                    }
+                    if (File.Exists(defaultManifest))
+                    {
+                        return steamPath;
+                    }
+                }
+                
+                // Check all library folders
                 var content = File.ReadAllText(libraryFoldersPath);
-                // Simple VDF parsing - look for library folders containing app 730
                 var lines = content.Split('\n');
-                string currentPath = null;
-
+                
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim();
@@ -104,12 +139,20 @@ namespace CS2KZMappingTools
                         var match = Regex.Match(trimmed, "\"path\"\\s+\"([^\"]+)\"");
                         if (match.Success)
                         {
-                            currentPath = match.Groups[1].Value.Replace("\\\\", "\\");
+                            var libraryPath = match.Groups[1].Value.Replace("\\\\", "\\");
+                            
+                            // Check if this library has CS2
+                            var manifestPath = Path.Combine(libraryPath, "steamapps", "appmanifest_730.acf");
+                            if (!File.Exists(manifestPath))
+                            {
+                                manifestPath = Path.Combine(libraryPath, "SteamApps", "appmanifest_730.acf");
+                            }
+                            
+                            if (File.Exists(manifestPath))
+                            {
+                                return libraryPath;
+                            }
                         }
-                    }
-                    else if (trimmed.Contains("\"730\"") && currentPath != null)
-                    {
-                        return currentPath;
                     }
                 }
             }

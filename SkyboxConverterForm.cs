@@ -622,30 +622,50 @@ namespace CS2KZMappingTools
                     var steamPath = steamKey.GetValue("InstallPath") as string;
                     if (!string.IsNullOrEmpty(steamPath))
                     {
+                        // Try both casings for libraryfolders.vdf
                         var libraryFolders = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+                        if (!File.Exists(libraryFolders))
+                        {
+                            libraryFolders = Path.Combine(steamPath, "SteamApps", "libraryfolders.vdf");
+                        }
+                        
                         if (File.Exists(libraryFolders))
                         {
+                            // Check default Steam location first
+                            var defaultCs2Path = Path.Combine(steamPath, "steamapps", "common", "Counter-Strike Global Offensive");
+                            if (!Directory.Exists(defaultCs2Path))
+                            {
+                                defaultCs2Path = Path.Combine(steamPath, "SteamApps", "common", "Counter-Strike Global Offensive");
+                            }
+                            if (Directory.Exists(defaultCs2Path))
+                            {
+                                return defaultCs2Path;
+                            }
+
+                            // Check all library paths
                             var content = File.ReadAllText(libraryFolders);
                             var lines = content.Split('\n');
-
+                            
                             foreach (var line in lines)
                             {
-                                if (line.Contains("730")) // CS2 AppID
+                                var trimmed = line.Trim();
+                                if (trimmed.Contains("\"path\""))
                                 {
-                                    // Find the path in this library
-                                    var pathLine = lines.SkipWhile(l => !l.Contains(line.Trim())).Skip(1)
-                                        .FirstOrDefault(l => l.Contains("path"));
-                                    if (pathLine != null)
+                                    var match = System.Text.RegularExpressions.Regex.Match(trimmed, "\"path\"\\s+\"([^\"]+)\"");
+                                    if (match.Success)
                                     {
-                                        var match = System.Text.RegularExpressions.Regex.Match(pathLine, "\"path\"\\s+\"([^\"]+)\"");
-                                        if (match.Success)
+                                        var libraryPath = match.Groups[1].Value.Replace("\\\\", "\\");
+                                        
+                                        // Try both casings
+                                        var cs2Path = Path.Combine(libraryPath, "steamapps", "common", "Counter-Strike Global Offensive");
+                                        if (!Directory.Exists(cs2Path))
                                         {
-                                            var libraryPath = match.Groups[1].Value.Replace("\\\\", "\\");
-                                            var cs2Path = Path.Combine(libraryPath, "steamapps", "common", "Counter-Strike Global Offensive");
-                                            if (Directory.Exists(cs2Path))
-                                            {
-                                                return cs2Path;
-                                            }
+                                            cs2Path = Path.Combine(libraryPath, "SteamApps", "common", "Counter-Strike Global Offensive");
+                                        }
+                                        
+                                        if (Directory.Exists(cs2Path))
+                                        {
+                                            return cs2Path;
                                         }
                                     }
                                 }

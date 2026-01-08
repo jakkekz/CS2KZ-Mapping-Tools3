@@ -126,36 +126,50 @@ namespace CS2KZMappingTools
                 }
                 else
                 {
-                    // Try flat structure (older Steam format) - apps directly at root level
+                    // Try flat structure (older Steam format) - each numbered entry is a library folder
                     Log($"No libraryfolders section found, trying flat structure. Root keys: {string.Join(", ", libraryData.Keys)}");
                     
-                    if (libraryData.ContainsKey("730"))
+                    // Check Steam default location first
+                    var steamPath = await GetSteamDirectoryAsync();
+                    if (!string.IsNullOrEmpty(steamPath))
                     {
-                        Log("Found CS2 (730) at root level");
-                        
-                        // Look for path in the same structure
-                        if (libraryData.TryGetValue("path", out var pathObj) && pathObj is string path)
+                        var defaultManifestPath = Path.Combine(steamPath, "steamapps", "appmanifest_730.acf");
+                        if (!File.Exists(defaultManifestPath))
                         {
-                            Log($"Found library path: {path}");
-                            return path;
+                            defaultManifestPath = Path.Combine(steamPath, "SteamApps", "appmanifest_730.acf");
                         }
-                        else
+                        
+                        if (File.Exists(defaultManifestPath))
                         {
-                            Log("CS2 found but no path in root data, checking Steam directory");
-                            // If no path found, assume default Steam library
-                            var steamPath = await GetSteamDirectoryAsync();
-                            if (!string.IsNullOrEmpty(steamPath))
+                            Log($"Found CS2 in default Steam library: {steamPath}");
+                            return steamPath;
+                        }
+                    }
+                    
+                    // Check all library paths in the VDF
+                    foreach (var kvp in libraryData)
+                    {
+                        // Skip non-path entries (like contentid, label, etc.)
+                        if (kvp.Value is string libraryPath && Directory.Exists(libraryPath))
+                        {
+                            Log($"Checking library path: {libraryPath}");
+                            
+                            // Try both casings for steamapps folder
+                            var manifestPath = Path.Combine(libraryPath, "steamapps", "appmanifest_730.acf");
+                            if (!File.Exists(manifestPath))
                             {
-                                var defaultPath = steamPath; // Steam root directory
-                                Log($"Using default Steam library path: {defaultPath}");
-                                return defaultPath;
+                                manifestPath = Path.Combine(libraryPath, "SteamApps", "appmanifest_730.acf");
+                            }
+                            
+                            if (File.Exists(manifestPath))
+                            {
+                                Log($"Found CS2 in library: {libraryPath}");
+                                return libraryPath;
                             }
                         }
                     }
-                    else
-                    {
-                        Log($"CS2 (730) not found at root level either");
-                    }
+                    
+                    Log("CS2 not found in any library path");
                 }
             }
             catch (Exception ex)
@@ -177,7 +191,14 @@ namespace CS2KZMappingTools
             }
             Log($"Steam directory: {steamPath}");
 
-            var libraryPath = await FindCS2LibraryPathAsync(Path.Combine(steamPath, "steamapps", "libraryfolders.vdf"));
+            // Try both casings for libraryfolders.vdf
+            var libraryFoldersPath = Path.Combine(steamPath, "steamapps", "libraryfolders.vdf");
+            if (!File.Exists(libraryFoldersPath))
+            {
+                libraryFoldersPath = Path.Combine(steamPath, "SteamApps", "libraryfolders.vdf");
+            }
+            
+            var libraryPath = await FindCS2LibraryPathAsync(libraryFoldersPath);
             if (libraryPath == null)
             {
                 Log("Failed to get library path");
@@ -187,12 +208,19 @@ namespace CS2KZMappingTools
 
             try
             {
+                // Try both casings (steamapps and SteamApps)
                 var manifestPath = Path.Combine(libraryPath, "steamapps", "appmanifest_730.acf");
+                if (!File.Exists(manifestPath))
+                {
+                    manifestPath = Path.Combine(libraryPath, "SteamApps", "appmanifest_730.acf");
+                }
+                
                 Log($"Looking for CS2 manifest at: {manifestPath}");
                 
                 if (!File.Exists(manifestPath))
                 {
                     Log($"CS2 manifest not found at {manifestPath}");
+                    Log($"Tried both 'steamapps' and 'SteamApps' folder names");
                     return null;
                 }
 
@@ -204,7 +232,13 @@ namespace CS2KZMappingTools
                 // installdir is directly at root level, not in AppState
                 if (manifestData.TryGetValue("installdir", out var installdirObj) && installdirObj is string installdir)
                 {
+                    // Try both casings for steamapps folder
                     var cs2Path = Path.Combine(libraryPath, "steamapps", "common", installdir);
+                    if (!Directory.Exists(cs2Path))
+                    {
+                        cs2Path = Path.Combine(libraryPath, "SteamApps", "common", installdir);
+                    }
+                    
                     Log($"Found CS2 installation: {cs2Path}");
                     return cs2Path;
                 }
