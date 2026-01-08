@@ -876,23 +876,15 @@ namespace CS2KZMappingTools
         {
             try
             {
-                Log($"Launching CS2 tools from '{cs2ToolsPath}'...");
+                Log($"Launching CS2 with CS2KZ via Steam...");
                 
-                var csgoCfgPath = Path.Combine(cs2ToolsPath, "csgocfg.exe");
+                // Launch CS2 via Steam protocol with -insecure flag for Metamod to load
                 var startInfo = new ProcessStartInfo
                 {
-                    FileName = csgoCfgPath,
-                    Arguments = "-insecure -gpuraytracing",
-                    WorkingDirectory = cs2ToolsPath,
-                    UseShellExecute = false,
-                    CreateNoWindow = false,  // Changed from true - Python uses CREATE_NEW_CONSOLE
-                    RedirectStandardOutput = false,  // Changed from true - Python uses DEVNULL with detached process
-                    RedirectStandardError = false,   // Changed from true
-                    RedirectStandardInput = false    // Changed from true
+                    FileName = "steam://rungameid/730//-insecure -gpuraytracing",
+                    UseShellExecute = true
                 };
 
-                // Python uses creationflags=0x208 which is CREATE_NEW_CONSOLE (0x10) + DETACHED_PROCESS (0x08)
-                // In C# we achieve this by not redirecting streams and allowing a new console
                 var process = Process.Start(startInfo);
                 
                 // Wait for CS2 to actually start (give it time to launch)
