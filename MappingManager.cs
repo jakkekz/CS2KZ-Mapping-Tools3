@@ -876,22 +876,30 @@ namespace CS2KZMappingTools
         {
             try
             {
-                Log($"Launching CS2 with CS2KZ via Steam...");
+                Log($"Launching CS2 tools from '{cs2ToolsPath}'...");
                 
-                // Launch CS2 via Steam protocol with -insecure flag for Metamod to load
+                // Launch CS2 tools directly (csgocfg.exe for Hammer editor)
+                var exePath = Path.Combine(cs2ToolsPath, "csgocfg.exe");
+                if (!File.Exists(exePath))
+                {
+                    throw new Exception($"CS2 tools executable not found at: {exePath}");
+                }
+                
                 var startInfo = new ProcessStartInfo
                 {
-                    FileName = "steam://rungameid/730//-insecure -gpuraytracing",
-                    UseShellExecute = true
+                    FileName = exePath,
+                    Arguments = "-insecure -gpuraytracing",
+                    WorkingDirectory = cs2ToolsPath,
+                    UseShellExecute = false
                 };
 
                 var process = Process.Start(startInfo);
                 
-                // Wait for CS2 to actually start (give it time to launch)
+                // Wait for CS2 tools to actually start
                 Log("Waiting for CS2 to launch...");
                 await Task.Run(async () =>
                 {
-                    // Wait up to 30 seconds for CS2 to start (either csgocfg or cs2)
+                    // Wait up to 30 seconds for CS2 tools to start (csgocfg)
                     for (int i = 0; i < 30; i++)
                     {
                         var csgocfgProcesses = Process.GetProcessesByName("csgocfg");
