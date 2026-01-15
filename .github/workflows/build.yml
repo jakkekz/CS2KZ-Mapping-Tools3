@@ -46,10 +46,10 @@ jobs:
         echo "sha=$shortSha" >> $env:GITHUB_OUTPUT
     
     - name: Publish Self-Contained (with .NET Runtime)
-      run: dotnet publish -c Release -p:PublishSingleFile=true -p:SelfContained=true -p:RuntimeIdentifier=win-x64 -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true --no-restore -o publish/self-contained
+      run: dotnet publish CS2KZMappingTools.csproj -c Release -p:PublishSingleFile=true -p:SelfContained=true -p:RuntimeIdentifier=win-x64 -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true --no-restore -o publish/self-contained
     
     - name: Publish Framework-Dependent (requires .NET 8)
-      run: dotnet publish -c Release -p:PublishSingleFile=true -p:SelfContained=false -p:RuntimeIdentifier=win-x64 --no-restore -o publish/framework-dependent
+      run: dotnet publish CS2KZMappingTools.csproj -c Release -p:PublishSingleFile=true -p:SelfContained=false -p:RuntimeIdentifier=win-x64 -p:EnableCompressionInSingleFile=false --no-restore -o publish/framework-dependent
     
     - name: Rename Artifacts
       run: |
