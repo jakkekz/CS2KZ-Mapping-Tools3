@@ -11,3 +11,8 @@
 - **Point Worldtext**, make csgo style point_worldtext in cs2
 - **VTF to PNG**, mass convert VTF files to PNG images
 - **Sounds**, add sounds easier WORK IN PROGRESS!
+
+
+# TODO
+- [ ] Make update status dots work correctly for both S2V and CS2 launch things
+- [ ] Make updater work correctly
